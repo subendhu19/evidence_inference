@@ -31,6 +31,7 @@ from allennlp.data.token_indexers import (
     SingleIdTokenIndexer,
     ELMoTokenCharactersIndexer
 )
+from allennlp.training.util import evaluate
 
 import logging
 import argparse
@@ -129,10 +130,10 @@ def main():
     parser = argparse.ArgumentParser(description='Evidence Inference experiments')
     parser.add_argument('--cuda_device', type=int, default=0,
                         help='GPU number (default: 0)')
-    parser.add_argument('--epochs', type=int, default=100,
-                        help='upper epoch limit (default: 100)')
-    parser.add_argument('--patience', type=int, default=10,
-                        help='trainer patience  (default: 10)')
+    parser.add_argument('--epochs', type=int, default=2,
+                        help='upper epoch limit (default: 2)')
+    parser.add_argument('--patience', type=int, default=1,
+                        help='trainer patience  (default: 1)')
     parser.add_argument('--batch_size', type=int, default=32,
                         help='batch size (default: 32)')
     parser.add_argument('--dropout', type=float, default=0.2,
@@ -213,7 +214,7 @@ def main():
                       optimizer=optimizer,
                       iterator=iterator,
                       train_dataset=train_data,
-                      validation_dataset=valid_data,
+                      validation_dataset=test_data,
                       patience=args.patience,
                       validation_metric='+accuracy',
                       num_epochs=args.epochs,
@@ -221,10 +222,16 @@ def main():
                       serialization_dir=serialization_dir)
 
     result = trainer.train()
-    print('\n\n')
     for key in result:
-        print(str(key) + ': ' + str(result[key]) + '\n')
-    print('\n\n')
+        print(str(key) + ': ' + str(result[key]))
+
+    test_metrics = evaluate(trainer.model, test_data, iterator,
+                            cuda_device=trainer._cuda_devices[0],  # pylint: disable=protected-access,
+                            batch_weight_key="")
+
+    print('Test Data statistics:')
+    for key, value in test_metrics.items():
+        print(str(key) + ': ' + str(value))
 
 
 if __name__ == '__main__':
