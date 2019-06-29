@@ -37,8 +37,6 @@ import logging
 import argparse
 import pandas as pd
 
-CUDA_DEVICE = 0
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
@@ -198,8 +196,12 @@ def main():
 
     model = Baseline(word_embeddings, vocab)
 
+    cuda_device = args.cuda_device
+
     if torch.cuda.is_available():
-        model = model.cuda(CUDA_DEVICE)
+        model = model.cuda(cuda_device)
+    else:
+        cuda_device = -1
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -218,7 +220,7 @@ def main():
                       patience=args.patience,
                       validation_metric='+accuracy',
                       num_epochs=args.epochs,
-                      cuda_device=-1,
+                      cuda_device=cuda_device,
                       serialization_dir=serialization_dir)
 
     result = trainer.train()
@@ -226,7 +228,7 @@ def main():
         print(str(key) + ': ' + str(result[key]))
 
     test_metrics = evaluate(trainer.model, test_data, iterator,
-                            cuda_device=trainer._cuda_devices[0],  # pylint: disable=protected-access,
+                            cuda_device=cuda_device,  # pylint: disable=protected-access,
                             batch_weight_key="")
 
     print('Test Data statistics:')
