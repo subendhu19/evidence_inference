@@ -19,7 +19,7 @@ from allennlp.models import Model
 from allennlp.modules.input_variational_dropout import InputVariationalDropout
 from allennlp.modules.text_field_embedders import TextFieldEmbedder, BasicTextFieldEmbedder
 from allennlp.modules.matrix_attention.linear_matrix_attention import LinearMatrixAttention
-from allennlp.training.metrics import CategoricalAccuracy
+from allennlp.training.metrics import CategoricalAccuracy, F1Measure
 from allennlp.nn.util import get_text_field_mask, masked_softmax, masked_log_softmax
 
 from allennlp.modules.token_embedders import ElmoTokenEmbedder
@@ -36,6 +36,7 @@ from allennlp.training.util import evaluate
 import logging
 import argparse
 import pandas as pd
+import numpy as np
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -85,6 +86,9 @@ class Baseline(Model):
             out_features=vocab.get_vocab_size('labels')
         )
         self.accuracy = CategoricalAccuracy()
+        self.f_score_0 = F1Measure(positive_label=0)
+        self.f_score_1 = F1Measure(positive_label=1)
+        self.f_score_2 = F1Measure(positive_label=2)
         self.loss = CrossEntropyLoss()
 
     def forward(self,
@@ -116,12 +120,19 @@ class Baseline(Model):
 
         if labels is not None:
             self.accuracy(logits, labels)
+            self.f_score_0(logits, labels)
+            self.f_score_1(logits, labels)
+            self.f_score_2(logits, labels)
             output['loss'] = self.loss(logits, labels)
 
         return output
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
-        return {'accuracy': self.accuracy.get_metric(reset)}
+        _, _, f_score0 = self.f_score_0.get_metric(reset)
+        _, _, f_score1 = self.f_score_1.get_metric(reset)
+        _, _, f_score2 = self.f_score_2.get_metric(reset)
+        return {'accuracy': self.accuracy.get_metric(reset),
+                'f-score': np.mean([f_score0, f_score1, f_score2])}
 
 
 def main():
@@ -228,7 +239,7 @@ def main():
         print(str(key) + ': ' + str(result[key]))
 
     test_metrics = evaluate(trainer.model, test_data, iterator,
-                            cuda_device=cuda_device,  # pylint: disable=protected-access,
+                            cuda_device=cuda_device,
                             batch_weight_key="")
 
     print('Test Data statistics:')
