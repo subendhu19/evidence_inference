@@ -52,9 +52,9 @@ class EIDatasetReader(DatasetReader):
                          comparator: List[str]):
         fields = {
             'article': TextField([Token(x) for x in article_text], self.token_indexers),
-            'outcome': TextField([Token(x) for x in article_text], self.token_indexers),
-            'intervention': TextField([Token(x) for x in article_text], self.token_indexers),
-            'comparator': TextField([Token(x) for x in article_text], self.token_indexers),
+            'outcome': TextField([Token(x) for x in outcome], self.token_indexers),
+            'intervention': TextField([Token(x) for x in intervention], self.token_indexers),
+            'comparator': TextField([Token(x) for x in comparator], self.token_indexers),
             'labels': LabelField(label)
         }
         return Instance(fields)
