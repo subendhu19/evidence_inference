@@ -107,7 +107,12 @@ class Baseline(Model):
                 comparator: Dict[str, torch.Tensor],
                 labels: torch.Tensor = None) -> Dict[str, torch.Tensor]:
 
-        a_embeddings = self.word_embeddings(article)
+        try:
+            a_embeddings = self.word_embeddings(article)
+        except:
+            print(article)
+            return
+
         a_vec = a_embeddings[:, 0, :]
         # a_vec = self.bert_seq_encoder(a_vec, mask=torch.ones(a_vec.size()[:2]))
 
@@ -188,7 +193,7 @@ def main():
         for line in test_file:
             test.append(int(line.strip()))
 
-    bert_token_indexer = {'bert': PretrainedBertIndexer('bert-base-uncased', max_pieces=768)}
+    bert_token_indexer = {'bert': PretrainedBertIndexer('bert-base-uncased', max_pieces=2000)}
 
     reader = EIDatasetReader(bert_token_indexer, feature_dictionary)
     train_data = reader.read(train)
