@@ -1,7 +1,7 @@
 from allennlp.data.dataset_readers import DatasetReader
 
 from allennlp.data import Instance
-from allennlp.data.fields import TextField, LabelField, ListField
+from allennlp.data.fields import TextField, LabelField, ListField, IndexField
 
 from allennlp.data.token_indexers import TokenIndexer
 from allennlp.data.tokenizers import Token
@@ -12,26 +12,19 @@ from typing import Iterator, List, Dict
 
 import torch
 from torch.nn import LSTM
-import torch.nn.functional as F
-from torch.nn import Dropout, CrossEntropyLoss
+from torch.nn import CrossEntropyLoss
 
 from allennlp.models import Model
-from allennlp.modules.input_variational_dropout import InputVariationalDropout
 from allennlp.modules.text_field_embedders import TextFieldEmbedder, BasicTextFieldEmbedder
-from allennlp.modules.matrix_attention.linear_matrix_attention import LinearMatrixAttention
+from allennlp.modules.attention import BilinearAttention
 from allennlp.training.metrics import CategoricalAccuracy, F1Measure
-from allennlp.nn.util import get_text_field_mask, masked_softmax, masked_log_softmax
+from allennlp.nn.util import get_text_field_mask
 
-from allennlp.modules.token_embedders import (
-    ElmoTokenEmbedder,
-    PretrainedBertEmbedder
-)
+from allennlp.modules.token_embedders import PretrainedBertEmbedder
 from allennlp.data.iterators import BucketIterator
 from allennlp.training.trainer import Trainer
-from allennlp.modules.seq2vec_encoders import PytorchSeq2VecWrapper
 
 from allennlp.data.token_indexers import (
-    SingleIdTokenIndexer,
     PretrainedBertIndexer
 )
 from allennlp.training.util import evaluate
@@ -40,6 +33,7 @@ import logging
 import argparse
 import pandas as pd
 import numpy as np
+import pickle
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -50,17 +44,13 @@ class EIDatasetReader(DatasetReader):
         super().__init__(lazy=False)
         self.token_indexers = token_indexers
         self.feature_dictionary = feature_dictionary
-        self.cutoff_length = 768
 
-    def text_to_instance(self, article_text: List[str], label: str, outcome: List[str], intervention: List[str],
-                         comparator: List[str]):
-
-        # article_chunks = [article_text[i: i + self.cutoff_length] for i in range(0, len(article_text),
-        #                                                                          self.cutoff_length)]
+    def text_to_instance(self, article_paragraphs: List[List[str]], label: str, evidence_spans: List[int],
+                         outcome: List[str], intervention: List[str], comparator: List[str]):
+        article = ListField([TextField([Token(x) for x in para[:200]], self.token_indexers) for para in article_paragraphs])
         fields = {
-            # 'article': ListField([TextField([Token(x) for x in chunk], self.token_indexers)
-            #                       for chunk in article_chunks]),
-            'article': TextField([Token(x) for x in article_text], self.token_indexers),
+            'article': article,
+            'evidence': ListField([IndexField(item, article) for item in evidence_spans]),
             'outcome': TextField([Token(x) for x in outcome], self.token_indexers),
             'intervention': TextField([Token(x) for x in intervention], self.token_indexers),
             'comparator': TextField([Token(x) for x in comparator], self.token_indexers),
@@ -72,10 +62,20 @@ class EIDatasetReader(DatasetReader):
         for pmcid in dataset:
             if pmcid in self.feature_dictionary:
                 for sample in self.feature_dictionary[pmcid]:
-                    if not isinstance(sample[0], str):
-                        continue
-                    yield self.text_to_instance(sample[0].lower().split(), sample[1], sample[2].lower().split(),
-                                                sample[3].lower().split(), sample[4].lower().split())
+                    yield self.text_to_instance([item.lower().split() for item in sample[0]], sample[1], sample[2],
+                                                sample[4].lower().split(), sample[5].lower().split(),
+                                                sample[6].lower().split())
+
+
+def get_one_hot(l: torch.Tensor, length: int):
+    vec = torch.zeros(l.size(0), length)
+    for i in range(l.size(0)):
+        for j in range(l.size(1)):
+            if l[i][j] != -1:
+                vec[i][l[i][j]] = 1
+    if torch.cuda.is_available():
+        vec = vec.cuda(cuda_device)
+    return vec
 
 
 class Baseline(Model):
@@ -85,13 +85,8 @@ class Baseline(Model):
         super().__init__(vocab)
         self.word_embeddings = word_embeddings
 
-        self.bert_seq_encoder = PytorchSeq2VecWrapper(LSTM(word_embeddings.get_output_dim(),
-                                                      int(word_embeddings.get_output_dim()/2),
-                                                      batch_first=True,
-                                                      bidirectional=True))
-
         self.out = torch.nn.Linear(
-            in_features=word_embeddings.get_output_dim()*4,
+            in_features=self.word_embeddings.get_output_dim() * 4,
             out_features=vocab.get_vocab_size('labels')
         )
         self.accuracy = CategoricalAccuracy()
@@ -99,22 +94,23 @@ class Baseline(Model):
         self.f_score_1 = F1Measure(positive_label=1)
         self.f_score_2 = F1Measure(positive_label=2)
         self.loss = CrossEntropyLoss()
+        self.attention = BilinearAttention(word_embeddings.get_output_dim() * 3, word_embeddings.get_output_dim())
 
     def forward(self,
                 article: Dict[str, torch.Tensor],
+                evidence: torch.Tensor,
                 outcome: Dict[str, torch.Tensor],
                 intervention: Dict[str, torch.Tensor],
                 comparator: Dict[str, torch.Tensor],
                 labels: torch.Tensor = None) -> Dict[str, torch.Tensor]:
 
-        try:
-            a_embeddings = self.word_embeddings(article)
-        except:
-            print(article)
-            return
+        p_mask = get_text_field_mask(article, 1)
+        evidence_one_hot = get_one_hot(evidence, p_mask.size(1))
 
-        a_vec = a_embeddings[:, 0, :]
-        # a_vec = self.bert_seq_encoder(a_vec, mask=torch.ones(a_vec.size()[:2]))
+        a_mask = torch.sum(p_mask, dim=2)
+
+        a_embeddings = self.word_embeddings(article)
+        a_vec = a_embeddings[:, :, 0, :]
 
         o_embeddings = self.word_embeddings(outcome)
         o_vec = o_embeddings[:, 0, :]
@@ -125,16 +121,25 @@ class Baseline(Model):
         c_embeddings = self.word_embeddings(comparator)
         c_vec = c_embeddings[:, 0, :]
 
-        logits = self.out(torch.cat((a_vec, o_vec, i_vec, c_vec), dim=1))
+        prompt_vec = torch.cat((o_vec, i_vec, c_vec), dim=1)
+        a_attentions = self.attention.forward(prompt_vec, a_vec, a_mask)
 
-        output = {'logits': logits}
+        attended_a_vec = torch.sum(a_vec * a_attentions.unsqueeze(2), dim=1)
+        logits = self.out(torch.cat((attended_a_vec, o_vec, i_vec, c_vec), dim=1))
+        output = {'logits': logits, 'attentions': a_attentions}
+
+        att_loss = -1 * torch.mean(((evidence_one_hot * torch.log(torch.clamp(a_attentions, min=1e-9, max=1))) + (
+                (1 - evidence_one_hot) * torch.log(torch.clamp(1 - a_attentions, min=1e-9, max=1)))) * a_mask.float())
+        classification_loss = self.loss(logits, labels)
 
         if labels is not None:
             self.accuracy(logits, labels)
             self.f_score_0(logits, labels)
             self.f_score_1(logits, labels)
             self.f_score_2(logits, labels)
-            output['loss'] = self.loss(logits, labels)
+            output['loss'] = classification_loss + (0.01 * att_loss)
+            print(classification_loss)
+            print(att_loss)
 
         return output
 
@@ -154,28 +159,27 @@ def main():
                         help='upper epoch limit (default: 2)')
     parser.add_argument('--patience', type=int, default=1,
                         help='trainer patience  (default: 1)')
-    parser.add_argument('--batch_size', type=int, default=32,
-                        help='batch size (default: 32)')
+    parser.add_argument('--batch_size', type=int, default=8,
+                        help='batch size (default: 8)')
     parser.add_argument('--dropout', type=float, default=0.2,
                         help='dropout for the model (default: 0.2)')
-    parser.add_argument('--model_name', type=str, default='baseline',
-                        help='model name (default: baseline)')
+    parser.add_argument('--emb_size', type=int, default=256,
+                        help='elmo embeddings size (default: 256)')
+    parser.add_argument('--model_name', type=str, default='attention',
+                        help='model name (default: attention)')
     args = parser.parse_args()
 
-    annotations = pd.read_csv('data/data/annotations_merged.csv')
+    processed_annotations = pickle.load(open('data/data/p_annotations.p', 'rb'))
+
     prompts = pd.read_csv('data/data/prompts_merged.csv')
 
-    feature_dictionary = {}
     prompts_dictionary = {}
-
     for index, row in prompts.iterrows():
         prompts_dictionary[row['PromptID']] = [row['Outcome'], row['Intervention'], row['Comparator']]
 
-    for index, row in annotations.iterrows():
-        if row['PMCID'] not in feature_dictionary:
-            feature_dictionary[row['PMCID']] = []
-        feature_dictionary[row['PMCID']].append([row['Annotations'], row['Label']]
-                                                + prompts_dictionary[row['PromptID']])
+    for article_key in processed_annotations:
+        for article_item in processed_annotations[article_key]:
+            article_item += prompts_dictionary[article_item[-1]]
 
     train = []
     valid = []
@@ -193,9 +197,9 @@ def main():
         for line in test_file:
             test.append(int(line.strip()))
 
-    bert_token_indexer = {'bert': PretrainedBertIndexer('bert-base-uncased', max_pieces=2000)}
+    bert_token_indexer = {'bert': PretrainedBertIndexer('bert-base-uncased', max_pieces=5000)}
 
-    reader = EIDatasetReader(bert_token_indexer, feature_dictionary)
+    reader = EIDatasetReader(bert_token_indexer, processed_annotations)
     train_data = reader.read(train)
     valid_data = reader.read(valid)
     test_data = reader.read(test)
@@ -214,6 +218,7 @@ def main():
 
     model = Baseline(word_embeddings, vocab)
 
+    global cuda_device
     cuda_device = args.cuda_device
 
     if torch.cuda.is_available():
@@ -224,7 +229,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     iterator = BucketIterator(batch_size=args.batch_size,
-                              sorting_keys=[('intervention', 'num_tokens')],
+                              sorting_keys=[('article', 'num_fields')],
                               padding_noise=0.1)
     iterator.index_with(vocab)
 
