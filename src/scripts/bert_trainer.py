@@ -60,7 +60,7 @@ class EIDatasetReader(DatasetReader):
         fields = {
             # 'article': ListField([TextField([Token(x) for x in chunk], self.token_indexers)
             #                       for chunk in article_chunks]),
-            'article': TextField([Token(x) for x in article_text[:200]], self.token_indexers),
+            'article': TextField([Token(x) for x in article_text[:100]], self.token_indexers),
             'outcome': TextField([Token(x) for x in outcome], self.token_indexers),
             'intervention': TextField([Token(x) for x in intervention], self.token_indexers),
             'comparator': TextField([Token(x) for x in comparator], self.token_indexers),
