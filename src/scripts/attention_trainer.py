@@ -199,7 +199,7 @@ def main():
         for line in test_file:
             test.append(int(line.strip()))
 
-    bert_token_indexer = {'bert': PretrainedBertIndexer('bert-base-uncased', max_pieces=5000)}
+    bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=5000)}
 
     reader = EIDatasetReader(bert_token_indexer, processed_annotations)
     train_data = reader.read(train)
@@ -209,7 +209,7 @@ def main():
     vocab = Vocabulary.from_instances(train_data + valid_data + test_data)
 
     bert_token_embedding = PretrainedBertEmbedder(
-        'bert-base-uncased', requires_grad=False
+        'scibert/weights.tar.gz', requires_grad=False
     )
 
     word_embeddings = BasicTextFieldEmbedder(
