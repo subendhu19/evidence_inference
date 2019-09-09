@@ -110,6 +110,7 @@ class Baseline(Model):
         a_mask = torch.sum(p_mask, dim=2)
 
         a_embeddings = self.word_embeddings(article)
+        print(a_embeddings.size())
         a_vec = a_embeddings[:, :, 0, :]
 
         o_embeddings = self.word_embeddings(outcome)
