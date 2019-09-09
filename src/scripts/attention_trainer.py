@@ -51,11 +51,11 @@ class EIDatasetReader(DatasetReader):
                              for para in article_paragraphs])
         fields = {
             'article': article,
-            'evidence': ListField([IndexField(item, article) for item in evidence_spans]),
             'outcome': TextField([Token(x) for x in outcome], self.token_indexers),
             'intervention': TextField([Token(x) for x in intervention], self.token_indexers),
             'comparator': TextField([Token(x) for x in comparator], self.token_indexers),
-            'labels': LabelField(label)
+            'labels': LabelField(label),
+            'evidence': ListField([IndexField(item, article) for item in evidence_spans])
         }
         return Instance(fields)
 
@@ -99,14 +99,13 @@ class Baseline(Model):
 
     def forward(self,
                 article: Dict[str, torch.Tensor],
-                evidence: torch.Tensor,
                 outcome: Dict[str, torch.Tensor],
                 intervention: Dict[str, torch.Tensor],
                 comparator: Dict[str, torch.Tensor],
-                labels: torch.Tensor = None) -> Dict[str, torch.Tensor]:
+                labels: torch.Tensor = None,
+                evidence: torch.Tensor = None) -> Dict[str, torch.Tensor]:
 
         p_mask = get_text_field_mask(article, 1)
-        evidence_one_hot = get_one_hot(evidence, p_mask.size(1))
 
         a_mask = torch.sum(p_mask, dim=2)
 
@@ -129,18 +128,20 @@ class Baseline(Model):
         logits = self.out(torch.cat((attended_a_vec, o_vec, i_vec, c_vec), dim=1))
         output = {'logits': logits, 'attentions': a_attentions}
 
-        att_loss = -1 * torch.mean(((evidence_one_hot * torch.log(torch.clamp(a_attentions, min=1e-9, max=1))) + (
-                (1 - evidence_one_hot) * torch.log(torch.clamp(1 - a_attentions, min=1e-9, max=1)))) * a_mask.float())
-        classification_loss = self.loss(logits, labels)
+        if (labels is not None) and (evidence is not None):
 
-        if labels is not None:
+            evidence_one_hot = get_one_hot(evidence, p_mask.size(1))
+            att_loss = -1 * torch.mean(((evidence_one_hot * torch.log(torch.clamp(a_attentions, min=1e-9, max=1))) + (
+                    (1 - evidence_one_hot) *
+                    torch.log(torch.clamp(1 - a_attentions, min=1e-9, max=1)))) * a_mask.float())
+
+            classification_loss = self.loss(logits, labels)
+
             self.accuracy(logits, labels)
             self.f_score_0(logits, labels)
             self.f_score_1(logits, labels)
             self.f_score_2(logits, labels)
             output['loss'] = classification_loss + (0.01 * att_loss)
-            print(classification_loss)
-            print(att_loss)
 
         return output
 
