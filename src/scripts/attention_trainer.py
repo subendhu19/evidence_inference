@@ -109,12 +109,8 @@ class Baseline(Model):
 
         a_mask = torch.sum(p_mask, dim=2)
 
-        try:
-            a_embeddings = self.word_embeddings(article)
-        except:
-            logger.info(p_mask.size())
-            logger.info(article)
-            return
+        logger.info(article['bert'].size())
+        a_embeddings = self.word_embeddings(article)
 
         logger.info(a_embeddings.size())
         a_vec = a_embeddings[:, :, 0, :]
