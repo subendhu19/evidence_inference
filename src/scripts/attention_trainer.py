@@ -47,7 +47,7 @@ class EIDatasetReader(DatasetReader):
 
     def text_to_instance(self, article_paragraphs: List[List[str]], label: str, evidence_spans: List[int],
                          outcome: List[str], intervention: List[str], comparator: List[str]):
-        article = ListField([TextField([Token(x) for x in para], self.token_indexers)
+        article = ListField([TextField([Token(x) for x in para[:100]], self.token_indexers)
                              for para in article_paragraphs])
         fields = {
             'article': article,
