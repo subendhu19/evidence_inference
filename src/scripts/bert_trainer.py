@@ -55,11 +55,7 @@ class EIDatasetReader(DatasetReader):
     def text_to_instance(self, article_text: List[str], label: str, outcome: List[str], intervention: List[str],
                          comparator: List[str]):
 
-        # article_chunks = [article_text[i: i + self.cutoff_length] for i in range(0, len(article_text),
-        #                                                                          self.cutoff_length)]
         fields = {
-            # 'article': ListField([TextField([Token(x) for x in chunk], self.token_indexers)
-            #                       for chunk in article_chunks]),
             'article': TextField([Token(x) for x in article_text], self.token_indexers),
             'outcome': TextField([Token(x) for x in outcome], self.token_indexers),
             'intervention': TextField([Token(x) for x in intervention], self.token_indexers),
@@ -107,12 +103,7 @@ class Baseline(Model):
                 comparator: Dict[str, torch.Tensor],
                 labels: torch.Tensor = None) -> Dict[str, torch.Tensor]:
 
-        try:
-            a_embeddings = self.word_embeddings(article)
-        except:
-            print(article)
-            return
-
+        a_embeddings = self.word_embeddings(article)
         a_vec = a_embeddings[:, 0, :]
         # a_vec = self.bert_seq_encoder(a_vec, mask=torch.ones(a_vec.size()[:2]))
 
