@@ -47,7 +47,7 @@ class EIDatasetReader(DatasetReader):
 
     def text_to_instance(self, article_paragraphs: List[List[str]], label: str, evidence_spans: List[int],
                          outcome: List[str], intervention: List[str], comparator: List[str]):
-        article = ListField([TextField([Token(x) for x in para[:100]], self.token_indexers)
+        article = ListField([TextField([Token(x) for x in para], self.token_indexers)
                              for para in article_paragraphs])
         fields = {
             'article': article,
@@ -108,11 +108,7 @@ class Baseline(Model):
         p_mask = get_text_field_mask(article, 1)
 
         a_mask = torch.sum(p_mask, dim=2)
-
-        logger.info(article['bert'].size())
         a_embeddings = self.word_embeddings(article)
-
-        logger.info(a_embeddings.size())
         a_vec = a_embeddings[:, :, 0, :]
 
         o_embeddings = self.word_embeddings(outcome)
@@ -202,7 +198,7 @@ def main():
         for line in test_file:
             test.append(int(line.strip()))
 
-    bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=5000)}
+    bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
 
     reader = EIDatasetReader(bert_token_indexer, processed_annotations)
     train_data = reader.read(train)
@@ -227,8 +223,10 @@ def main():
     cuda_device = args.cuda_device
 
     if torch.cuda.is_available():
+        logger.info('Running on GPU')
         model = model.cuda(cuda_device)
     else:
+        logger.info('Running on CPU')
         cuda_device = -1
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
