@@ -194,7 +194,7 @@ def main():
     vocab = Vocabulary.from_instances(train_data + valid_data + test_data)
 
     bert_token_embedding = PretrainedBertEmbedder(
-        'scibert/weights.tar.gz', requires_grad=True
+        'scibert/weights.tar.gz', requires_grad=False
     )
 
     word_embeddings = BasicTextFieldEmbedder(
