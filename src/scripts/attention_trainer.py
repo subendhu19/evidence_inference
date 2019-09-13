@@ -168,6 +168,8 @@ def main():
                         help='elmo embeddings size (default: 256)')
     parser.add_argument('--model_name', type=str, default='attention',
                         help='model name (default: attention)')
+    parser.add_argument('--tunable', action='store_true',
+                        help='tune the underlying embedding model (default: False)')
     args = parser.parse_args()
 
     processed_annotations = pickle.load(open('data/data/p_annotations.p', 'rb'))
@@ -208,7 +210,7 @@ def main():
     vocab = Vocabulary.from_instances(train_data + valid_data + test_data)
 
     bert_token_embedding = PretrainedBertEmbedder(
-        'scibert/weights.tar.gz', requires_grad=False
+        'scibert/weights.tar.gz', requires_grad=args.tunable
     )
 
     word_embeddings = BasicTextFieldEmbedder(

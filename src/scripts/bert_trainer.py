@@ -151,6 +151,8 @@ def main():
                         help='dropout for the model (default: 0.2)')
     parser.add_argument('--model_name', type=str, default='baseline',
                         help='model name (default: baseline)')
+    parser.add_argument('--tunable', action='store_true',
+                        help='tune the underlying embedding model (default: False)')
     args = parser.parse_args()
 
     annotations = pd.read_csv('data/data/annotations_merged.csv')
@@ -194,7 +196,7 @@ def main():
     vocab = Vocabulary.from_instances(train_data + valid_data + test_data)
 
     bert_token_embedding = PretrainedBertEmbedder(
-        'scibert/weights.tar.gz', requires_grad=False
+        'scibert/weights.tar.gz', requires_grad=args.tunable
     )
 
     word_embeddings = BasicTextFieldEmbedder(

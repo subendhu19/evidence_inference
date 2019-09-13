@@ -151,6 +151,8 @@ def main():
                         help='elmo embeddings size (default: 256)')
     parser.add_argument('--model_name', type=str, default='baseline',
                         help='model name (default: baseline)')
+    parser.add_argument('--tunable', action='store_true',
+                        help='tune the underlying embedding model (default: False)')
     args = parser.parse_args()
 
     annotations = pd.read_csv('data/data/annotations_merged.csv')
@@ -200,7 +202,7 @@ def main():
         '2xhighway_weights.hdf5'
     ]
 
-    elmo_token_embedding = ElmoTokenEmbedder(urls[0], urls[1], dropout=args.dropout, requires_grad=False,
+    elmo_token_embedding = ElmoTokenEmbedder(urls[0], urls[1], dropout=args.dropout, requires_grad=args.tunable,
                                              projection_dim=args.emb_size)
 
     word_embeddings = BasicTextFieldEmbedder({'elmo': elmo_token_embedding}, allow_unmatched_keys=True)
