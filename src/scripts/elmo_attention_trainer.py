@@ -19,13 +19,15 @@ from allennlp.modules.text_field_embedders import TextFieldEmbedder, BasicTextFi
 from allennlp.modules.attention import BilinearAttention
 from allennlp.training.metrics import CategoricalAccuracy, F1Measure
 from allennlp.nn.util import get_text_field_mask
+from allennlp.modules.seq2vec_encoders import PytorchSeq2VecWrapper
 
-from allennlp.modules.token_embedders import PretrainedBertEmbedder
+from allennlp.modules.token_embedders import ElmoTokenEmbedder
 from allennlp.data.iterators import BucketIterator
 from allennlp.training.trainer import Trainer
 
 from allennlp.data.token_indexers import (
-    PretrainedBertIndexer
+    ELMoTokenCharactersIndexer,
+    SingleIdTokenIndexer
 )
 from allennlp.training.util import evaluate
 
@@ -47,7 +49,7 @@ class EIDatasetReader(DatasetReader):
 
     def text_to_instance(self, article_paragraphs: List[List[str]], label: str, evidence_spans: List[int],
                          outcome: List[str], intervention: List[str], comparator: List[str]):
-        article = ListField([TextField([Token(x) for x in para[:100]], self.token_indexers)
+        article = ListField([TextField([Token(x) for x in para[:512]], self.token_indexers)
                              for para in article_paragraphs])
         fields = {
             'article': article,
@@ -86,6 +88,11 @@ class Baseline(Model):
         super().__init__(vocab)
         self.word_embeddings = word_embeddings
 
+        self.text_seq_encoder = PytorchSeq2VecWrapper(LSTM(word_embeddings.get_output_dim(),
+                                                      int(word_embeddings.get_output_dim()/2),
+                                                      batch_first=True,
+                                                      bidirectional=True))
+
         self.out = torch.nn.Linear(
             in_features=self.word_embeddings.get_output_dim() * 4,
             out_features=vocab.get_vocab_size('labels')
@@ -106,19 +113,27 @@ class Baseline(Model):
                 evidence: torch.Tensor = None) -> Dict[str, torch.Tensor]:
 
         p_mask = get_text_field_mask(article, 1)
-
+        p_size = p_mask.size()
         a_mask = (torch.sum(p_mask, dim=2) > 0)
+        unf_p_mask = p_mask.reshape(p_size[0] * p_size[1], p_size[2])
+
         a_embeddings = self.word_embeddings(article)
-        a_vec = a_embeddings[:, :, 0, :]
+        unf_a_embeddings = a_embeddings.reshape(p_size[0] * p_size[1], p_size[2], -1)
+        unf_a_vec = self.text_seq_encoder(unf_a_embeddings, unf_p_mask)
 
+        a_vec = unf_a_vec.reshape(p_size[0], p_size[1], -1)
+
+        o_mask = get_text_field_mask(outcome)
         o_embeddings = self.word_embeddings(outcome)
-        o_vec = o_embeddings[:, 0, :]
+        o_vec = self.text_seq_encoder(o_embeddings, o_mask)
 
+        i_mask = get_text_field_mask(intervention)
         i_embeddings = self.word_embeddings(intervention)
-        i_vec = i_embeddings[:, 0, :]
+        i_vec = self.text_seq_encoder(i_embeddings, i_mask)
 
+        c_mask = get_text_field_mask(comparator)
         c_embeddings = self.word_embeddings(comparator)
-        c_vec = c_embeddings[:, 0, :]
+        c_vec = self.text_seq_encoder(c_embeddings, c_mask)
 
         prompt_vec = torch.cat((o_vec, i_vec, c_vec), dim=1)
         a_attentions = self.attention.forward(prompt_vec, a_vec, a_mask)
@@ -128,6 +143,7 @@ class Baseline(Model):
         output = {'logits': logits, 'attentions': a_attentions}
 
         if (labels is not None) and (evidence is not None):
+
             evidence_one_hot = get_one_hot(evidence, p_mask.size(1))
             skip_no_evidence_mask = (torch.sum(evidence_one_hot, dim=1) > 0).unsqueeze(1).float()
             att_loss = -1 * torch.mean(((evidence_one_hot * torch.log(torch.clamp(a_attentions, min=1e-9, max=1))) + (
@@ -140,6 +156,7 @@ class Baseline(Model):
             self.f_score_0(logits, labels)
             self.f_score_1(logits, labels)
             self.f_score_2(logits, labels)
+
             output['loss'] = classification_loss + (5 * att_loss)
 
         return output
@@ -200,24 +217,26 @@ def main():
         for line in test_file:
             test.append(int(line.strip()))
 
-    bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
+    elmo_token_indexer = {'elmo': ELMoTokenCharactersIndexer(), 'tokens': SingleIdTokenIndexer()}
 
-    reader = EIDatasetReader(bert_token_indexer, processed_annotations)
+    reader = EIDatasetReader(elmo_token_indexer, processed_annotations)
     train_data = reader.read(train)
     valid_data = reader.read(valid)
     test_data = reader.read(test)
 
     vocab = Vocabulary.from_instances(train_data + valid_data + test_data)
 
-    bert_token_embedding = PretrainedBertEmbedder(
-        'scibert/weights.tar.gz', requires_grad=args.tunable
-    )
+    urls = [
+        'https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_'
+        '2xhighway_options.json',
+        'https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_'
+        '2xhighway_weights.hdf5'
+    ]
 
-    word_embeddings = BasicTextFieldEmbedder(
-        {"bert": bert_token_embedding},
-        {"bert": ['bert']},
-        allow_unmatched_keys=True
-    )
+    elmo_token_embedding = ElmoTokenEmbedder(urls[0], urls[1], dropout=args.dropout, requires_grad=args.tunable,
+                                             projection_dim=args.emb_size)
+
+    word_embeddings = BasicTextFieldEmbedder({'elmo': elmo_token_embedding}, allow_unmatched_keys=True)
 
     model = Baseline(word_embeddings, vocab)
 
