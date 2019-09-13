@@ -128,11 +128,11 @@ class Baseline(Model):
         output = {'logits': logits, 'attentions': a_attentions}
 
         if (labels is not None) and (evidence is not None):
-
             evidence_one_hot = get_one_hot(evidence, p_mask.size(1))
+            skip_no_evidence_mask = (torch.sum(evidence_one_hot, dim=1) > 0).unsqueeze(1).float()
             att_loss = -1 * torch.mean(((evidence_one_hot * torch.log(torch.clamp(a_attentions, min=1e-9, max=1))) + (
                     (1 - evidence_one_hot) *
-                    torch.log(torch.clamp(1 - a_attentions, min=1e-9, max=1)))) * a_mask.float())
+                    torch.log(torch.clamp(1 - a_attentions, min=1e-9, max=1)))) * a_mask.float() * skip_no_evidence_mask)
 
             classification_loss = self.loss(logits, labels)
 
@@ -208,7 +208,7 @@ def main():
     vocab = Vocabulary.from_instances(train_data + valid_data + test_data)
 
     bert_token_embedding = PretrainedBertEmbedder(
-        'scibert/weights.tar.gz', requires_grad=True
+        'scibert/weights.tar.gz', requires_grad=False
     )
 
     word_embeddings = BasicTextFieldEmbedder(
