@@ -61,17 +61,23 @@ class EvidenceDatasetReader(DatasetReader):
 
     def _read(self, dataset) -> Iterator[Instance]:
         for item in dataset:
-            for positive in item[1]:
-                for i in range(self.num_duplicate):
-                    if len(item[2]) > 0:
-                        yield self.text_to_instance(list(item[0]), positive.lower().split(),
-                                                    np.random.choice(item[2]).lower().split())
-                    if len(item[3]) > 0:
-                        yield self.text_to_instance(list(item[0]), positive.lower().split(),
-                                                    np.random.choice(item[3]).lower().split())
-                    if len(item[4]) > 0:
-                        yield self.text_to_instance(list(item[0]), positive.lower().split(),
-                                                    np.random.choice(item[4]).lower().split())
+            if len(item[0][0]) > 0 and len(item[0][1]) > 0 and len(item[0][2]) > 0:
+                for positive in item[1]:
+                    p = positive.lower().split()
+                    if len(p) > 0:
+                        for i in range(self.num_duplicate):
+                            if len(item[2]) > 0:
+                                neg1 = np.random.choice(item[2]).lower().split()
+                                if len(neg1) > 0:
+                                    yield self.text_to_instance(list(item[0]), p, neg1)
+                            if len(item[3]) > 0:
+                                neg2 = np.random.choice(item[3]).lower().split()
+                                if len(neg2) > 0:
+                                    yield self.text_to_instance(list(item[0]), p, neg2)
+                            if len(item[4]) > 0:
+                                neg3 = np.random.choice(item[4]).lower().split()
+                                if len(neg3) > 0:
+                                    yield self.text_to_instance(list(item[0]), p, neg3)
 
 
 class Classifier(Model):
