@@ -149,8 +149,8 @@ def main():
                         help='tune the underlying embedding model (default: False)')
     args = parser.parse_args()
 
-    classifier_train = pickle.load(open('data/classifier_train.p', 'rb'))[:10]
-    classifier_val = pickle.load(open('data/classifier_val.p', 'rb'))[:10]
+    classifier_train = pickle.load(open('data/classifier_train.p', 'rb'))
+    classifier_val = pickle.load(open('data/classifier_val.p', 'rb'))
 
     bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
 
