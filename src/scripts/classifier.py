@@ -29,6 +29,7 @@ from allennlp.data.token_indexers import (
     PretrainedBertIndexer
 )
 from allennlp.training.util import evaluate
+from allennlp.training.learning_rate_schedulers.noam import NoamLR
 
 import logging
 import argparse
@@ -189,7 +190,8 @@ def main():
     else:
         cuda_device = -1
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    scheduler = NoamLR(optimizer=optimizer, model_size=3072, warmup_steps=2000)
 
     iterator = BucketIterator(batch_size=args.batch_size,
                               sorting_keys=[('comb_evidence', 'num_tokens')],
@@ -207,6 +209,7 @@ def main():
                       validation_metric='+accuracy',
                       num_epochs=args.epochs,
                       cuda_device=cuda_device,
+                      learning_rate_scheduler=scheduler,
                       serialization_dir=serialization_dir)
 
     result = trainer.train()
