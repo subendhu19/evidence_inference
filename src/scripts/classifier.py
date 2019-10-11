@@ -28,8 +28,9 @@ from allennlp.training.trainer import Trainer
 from allennlp.data.token_indexers import (
     PretrainedBertIndexer
 )
-from allennlp.training.util import evaluate
-from allennlp.training.learning_rate_schedulers.noam import NoamLR
+# from allennlp.training.util import evaluate
+# from transformers import AdamW, WarmupLinearSchedule
+from pytorch_pretrained_bert import BertAdam
 
 import logging
 import argparse
@@ -142,12 +143,12 @@ def main():
     parser = argparse.ArgumentParser(description='Evidence sentence classifier')
     parser.add_argument('--cuda_device', type=int, default=0,
                         help='GPU number (default: 0)')
-    parser.add_argument('--epochs', type=int, default=2,
-                        help='upper epoch limit (default: 2)')
+    parser.add_argument('--epochs', type=int, default=5,
+                        help='upper epoch limit (default: 5)')
     parser.add_argument('--patience', type=int, default=1,
                         help='trainer patience  (default: 1)')
-    parser.add_argument('--batch_size', type=int, default=32,
-                        help='batch size (default: 32)')
+    parser.add_argument('--batch_size', type=int, default=8,
+                        help='batch size (default: 8)')
     parser.add_argument('--dropout', type=float, default=0.2,
                         help='dropout for the model (default: 0.2)')
     parser.add_argument('--model_name', type=str, default='ev_classifier_bert',
@@ -190,8 +191,9 @@ def main():
     else:
         cuda_device = -1
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    scheduler = NoamLR(optimizer=optimizer, model_size=3072, warmup_steps=2000)
+    t_total = len(train_data) // args.epochs
+
+    optimizer = BertAdam(model.parameters(), lr=2e-5, warmup=0.1, t_total=t_total)
 
     iterator = BucketIterator(batch_size=args.batch_size,
                               sorting_keys=[('comb_evidence', 'num_tokens')],
@@ -209,7 +211,7 @@ def main():
                       validation_metric='+accuracy',
                       num_epochs=args.epochs,
                       cuda_device=cuda_device,
-                      learning_rate_scheduler=scheduler,
+                      # learning_rate_scheduler=scheduler,
                       serialization_dir=serialization_dir)
 
     result = trainer.train()
