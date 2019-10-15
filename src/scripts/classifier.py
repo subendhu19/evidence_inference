@@ -145,12 +145,19 @@ class Classifier(Model):
 
             self.accuracy(all_preds.squeeze(), all_labels.squeeze())
 
-            output['loss'] = self.loss(all_logits, all_preds)
+            output['loss'] = self.loss(all_logits, all_labels)
 
         return output
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         return {'accuracy': self.accuracy.get_metric(reset)}
+
+    def predict_evidence_probs(self, comb_spans: Dict[str, torch.Tensor]) -> torch.Tensor:
+        span_embeddings = self.word_embeddings(comb_spans)
+        span_vec = span_embeddings[:, 0, :]
+        span_probs = self.sigmoid(self.out(span_vec))
+
+        return span_probs
 
 
 def main():
