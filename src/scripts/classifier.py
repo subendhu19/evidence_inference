@@ -13,7 +13,7 @@ from typing import Iterator, List, Dict
 
 import torch
 from torch.nn import LSTM
-from torch.nn import MarginRankingLoss
+from torch.nn import MarginRankingLoss, BCEWithLogitsLoss
 
 from allennlp.models import Model
 from allennlp.modules.text_field_embedders import TextFieldEmbedder, BasicTextFieldEmbedder
@@ -85,7 +85,9 @@ class EvidenceDatasetReader(DatasetReader):
 class Classifier(Model):
     def __init__(self,
                  word_embeddings: TextFieldEmbedder,
-                 vocab: Vocabulary) -> None:
+                 vocab: Vocabulary,
+                 loss: str,
+                 hinge_margin: float) -> None:
         super().__init__(vocab)
         self.word_embeddings = word_embeddings
 
@@ -94,7 +96,11 @@ class Classifier(Model):
             out_features=1
         )
         self.accuracy = BooleanAccuracy()
-        self.loss = MarginRankingLoss(margin=0.5, reduction='mean')
+        self.loss = loss
+        if loss == 'hinge':
+            self.loss = MarginRankingLoss(margin=hinge_margin, reduction='mean')
+        else:
+            self.loss = BCEWithLogitsLoss(reduction='mean')
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self,
@@ -112,22 +118,34 @@ class Classifier(Model):
         nev_embeddings = self.word_embeddings(comb_non_evidence)
         nev_vec = nev_embeddings[:, 0, :]
 
-        ev_probs = self.sigmoid(self.out(ev_vec))
-        nev_probs = self.sigmoid(self.out(nev_vec))
-
-        p_labels = torch.ones(size=(ev_probs.size(0), 1), device=ev_probs.device, requires_grad=False)
-        n_labels = torch.zeros(size=(ev_probs.size(0), 1), device=ev_probs.device, requires_grad=False)
-
-        all_probs = torch.cat((ev_probs, nev_probs), dim=0)
-        all_preds = (all_probs > 0.5).float()
-
+        p_labels = torch.ones(size=(ev_vec.size(0), 1), device=ev_vec.device, requires_grad=False)
+        n_labels = torch.zeros(size=(ev_vec.size(0), 1), device=ev_vec.device, requires_grad=False)
         all_labels = torch.cat((p_labels, n_labels), dim=0)
 
-        output = {'logits': all_probs}
+        if self.loss == 'hinge':
+            ev_probs = self.sigmoid(self.out(ev_vec))
+            nev_probs = self.sigmoid(self.out(nev_vec))
 
-        self.accuracy(all_preds.squeeze(), all_labels.squeeze())
+            all_probs = torch.cat((ev_probs, nev_probs), dim=0)
+            all_preds = (all_probs > 0.5).float()
 
-        output['loss'] = self.loss(ev_probs, nev_probs, p_labels)
+            output = {'logits': all_probs}
+
+            self.accuracy(all_preds.squeeze(), all_labels.squeeze())
+
+            output['loss'] = self.loss(ev_probs, nev_probs, p_labels)
+        else:
+            ev_logits = self.out(ev_vec)
+            nev_logits = self.out(nev_vec)
+
+            all_logits = torch.cat((ev_logits, nev_logits), dim=0)
+            all_preds = (self.sigmoid(all_logits) > 0.5).float()
+
+            output = {'logits': all_logits}
+
+            self.accuracy(all_preds.squeeze(), all_labels.squeeze())
+
+            output['loss'] = self.loss(all_logits, all_preds)
 
         return output
 
@@ -137,21 +155,25 @@ class Classifier(Model):
 
 def main():
     parser = argparse.ArgumentParser(description='Evidence sentence classifier')
-    parser.add_argument('--cuda_device', type=int, default=0,
-                        help='GPU number (default: 0)')
     parser.add_argument('--epochs', type=int, default=5,
                         help='upper epoch limit (default: 5)')
     parser.add_argument('--patience', type=int, default=1,
                         help='trainer patience  (default: 1)')
     parser.add_argument('--batch_size', type=int, default=8,
                         help='batch size (default: 8)')
-    parser.add_argument('--dropout', type=float, default=0.2,
-                        help='dropout for the model (default: 0.2)')
+    parser.add_argument('--loss', type=str, default='hinge',
+                        help='loss function to train the model - choose bce or hinge (default: hinge)')
+    parser.add_argument('--hinge_margin', type=float, default=0.5,
+                        help='the margin for the hinge loss, if used (default: 0.5)')
     parser.add_argument('--model_name', type=str, default='ev_classifier_bert',
                         help='model name (default: ev_classifier_bert)')
     parser.add_argument('--tunable', action='store_true',
                         help='tune the underlying embedding model (default: False)')
     args = parser.parse_args()
+
+    if args.loss not in ['bce', 'hinge']:
+        print('Loss must be bce or hinge')
+        return
 
     classifier_train = pickle.load(open('data/classifier_train.p', 'rb'))
     classifier_val = pickle.load(open('data/classifier_val.p', 'rb'))
@@ -174,9 +196,11 @@ def main():
         allow_unmatched_keys=True
     )
 
-    model = Classifier(word_embeddings, vocab)
+    model = Classifier(word_embeddings=word_embeddings,
+                       vocab=vocab,
+                       loss=args.loss,
+                       hinge_margin=args.hinge_margin)
 
-    # cuda_device = args.cuda_device
     cuda_device = list(range(torch.cuda.device_count()))
 
     if torch.cuda.is_available():
