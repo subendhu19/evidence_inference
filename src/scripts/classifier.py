@@ -96,7 +96,7 @@ class Classifier(Model):
             out_features=1
         )
         self.accuracy = BooleanAccuracy()
-        self.loss = loss
+        self.loss_name = loss
         if loss == 'hinge':
             self.loss = MarginRankingLoss(margin=hinge_margin, reduction='mean')
         else:
@@ -122,7 +122,7 @@ class Classifier(Model):
         n_labels = torch.zeros(size=(ev_vec.size(0), 1), device=ev_vec.device, requires_grad=False)
         all_labels = torch.cat((p_labels, n_labels), dim=0)
 
-        if self.loss == 'hinge':
+        if self.loss_name == 'hinge':
             ev_probs = self.sigmoid(self.out(ev_vec))
             nev_probs = self.sigmoid(self.out(nev_vec))
 
