@@ -94,7 +94,7 @@ class Classifier(Model):
             out_features=1
         )
         self.accuracy = BooleanAccuracy()
-        self.loss = MarginRankingLoss(margin=0.8, reduction='mean')
+        self.loss = MarginRankingLoss(margin=0.5, reduction='mean')
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self,
@@ -115,12 +115,8 @@ class Classifier(Model):
         ev_probs = self.sigmoid(self.out(ev_vec))
         nev_probs = self.sigmoid(self.out(nev_vec))
 
-        if torch.cuda.is_available():
-            p_labels = torch.ones(size=(ev_probs.size(0), 1), device=CUDA_DEVICE, requires_grad=False)
-            n_labels = torch.zeros(size=(ev_probs.size(0), 1), device=CUDA_DEVICE, requires_grad=False)
-        else:
-            p_labels = torch.ones(size=(ev_probs.size(0), 1), requires_grad=False)
-            n_labels = torch.zeros(size=(ev_probs.size(0), 1), requires_grad=False)
+        p_labels = torch.ones(size=(ev_probs.size(0), 1), device=ev_probs.device, requires_grad=False)
+        n_labels = torch.zeros(size=(ev_probs.size(0), 1), device=ev_probs.device, requires_grad=False)
 
         all_probs = torch.cat((ev_probs, nev_probs), dim=0)
         all_preds = (all_probs > 0.5).float()
@@ -180,14 +176,11 @@ def main():
 
     model = Classifier(word_embeddings, vocab)
 
-    cuda_device = args.cuda_device
-
-    global CUDA_DEVICE
-
-    CUDA_DEVICE = cuda_device
+    # cuda_device = args.cuda_device
+    cuda_device = list(range(torch.cuda.device_count()))
 
     if torch.cuda.is_available():
-        model = model.cuda(cuda_device)
+        model = model.cuda()
     else:
         cuda_device = -1
 
@@ -197,7 +190,8 @@ def main():
 
     iterator = BucketIterator(batch_size=args.batch_size,
                               sorting_keys=[('comb_evidence', 'num_tokens')],
-                              padding_noise=0.1)
+                              padding_noise=0.1,
+                              biggest_batch_first=True)
     iterator.index_with(vocab)
 
     serialization_dir = 'model_checkpoints/' + args.model_name
