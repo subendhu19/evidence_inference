@@ -29,7 +29,6 @@ from allennlp.data.token_indexers import (
     PretrainedBertIndexer
 )
 # from allennlp.training.util import evaluate
-# from transformers import AdamW, WarmupLinearSchedule
 from pytorch_pretrained_bert import BertAdam
 
 import logging
@@ -49,11 +48,6 @@ class EvidenceDatasetReader(DatasetReader):
     def text_to_instance(self, prompt: List[List[str]], evidence: List[str], non_evidence: List[str]):
 
         fields = {
-            'I': TextField([Token(x) for x in prompt[0]], self.token_indexers),
-            'C': TextField([Token(x) for x in prompt[1]], self.token_indexers),
-            'O': TextField([Token(x) for x in prompt[2]], self.token_indexers),
-            'evidence': TextField([Token(x) for x in evidence], self.token_indexers),
-            'non_evidence': TextField([Token(x) for x in non_evidence], self.token_indexers),
             'comb_evidence': TextField([Token(x) for x in (['[CLS]'] + prompt[0] + prompt[1] + prompt[2] +
                                                            ['[SEP]'] + evidence)], self.token_indexers),
             'comb_non_evidence': TextField([Token(x) for x in (['[CLS]'] + prompt[0] + prompt[1] + prompt[2] +
@@ -104,11 +98,6 @@ class Classifier(Model):
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self,
-                I: Dict[str, torch.Tensor],
-                C: Dict[str, torch.Tensor],
-                O: Dict[str, torch.Tensor],
-                evidence: Dict[str, torch.Tensor],
-                non_evidence: Dict[str, torch.Tensor],
                 comb_evidence: Dict[str, torch.Tensor],
                 comb_non_evidence: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
