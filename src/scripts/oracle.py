@@ -117,10 +117,19 @@ def main():
                         help='model name (default: sentence_oracle_bert)')
     parser.add_argument('--tunable', action='store_true',
                         help='tune the underlying embedding model (default: False)')
+    parser.add_argument('--ev_type', type=str, default='sentence',
+                        help='how to train the oracle - sentence or full (evidence) (default: sentence)')
     args = parser.parse_args()
 
-    train = pickle.load(open('data/oracle_train.p', 'rb'))
-    valid = pickle.load(open('data/oracle_val.p', 'rb'))
+    if args.ev_type == 'sentence':
+        train = pickle.load(open('data/oracle_train.p', 'rb'))
+        valid = pickle.load(open('data/oracle_val.p', 'rb'))
+    elif args.ev_type == 'full':
+        train = pickle.load(open('data/oracle_full_train.p', 'rb'))
+        valid = pickle.load(open('data/oracle_full_val.p', 'rb'))
+    else:
+        print('ev_type should be either sentence or full')
+        return
 
     bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
 
