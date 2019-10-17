@@ -28,7 +28,7 @@ from pytorch_pretrained_bert import BertAdam
 from allennlp.data.token_indexers import (
     PretrainedBertIndexer
 )
-from allennlp.training.util import evaluate
+# from allennlp.training.util import evaluate
 
 import logging
 import argparse
