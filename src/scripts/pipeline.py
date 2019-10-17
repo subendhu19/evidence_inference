@@ -2,45 +2,40 @@ from allennlp.data.dataset_readers import DatasetReader
 import pickle
 
 from allennlp.data import Instance
-from allennlp.data.fields import TextField
+from allennlp.data.fields import TextField, LabelField, ListField
 
 from allennlp.data.token_indexers import TokenIndexer
 from allennlp.data.tokenizers import Token
+from allennlp.nn import util as nn_util
 
 from allennlp.data.vocabulary import Vocabulary
 
 from typing import Iterator, List, Dict
 
 import torch
-from torch.nn import LSTM
-from torch.nn import MarginRankingLoss, BCEWithLogitsLoss
-
-from allennlp.models import Model
-from allennlp.modules.text_field_embedders import TextFieldEmbedder, BasicTextFieldEmbedder
-from allennlp.training.metrics import BooleanAccuracy
+from allennlp.modules.text_field_embedders import BasicTextFieldEmbedder
 
 from allennlp.modules.token_embedders import (
     PretrainedBertEmbedder
 )
-from allennlp.data.iterators import BucketIterator
-from allennlp.training.trainer import Trainer
+from allennlp.data.iterators import BasicIterator
 
 from allennlp.data.token_indexers import (
     PretrainedBertIndexer
 )
-# from allennlp.training.util import evaluate
-from pytorch_pretrained_bert import BertAdam
+
+from allennlp.training.util import evaluate
 
 import logging
 import argparse
-import numpy as np
 import sys
 import os
 
 # Path hack
 sys.path.insert(0, os.path.abspath('./'))
 
-from src.scripts.classifier import Classifier, EvidenceDatasetReader
+from src.scripts.classifier import Classifier
+from src.scripts.oracle import Oracle, EIDatasetReader
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -51,48 +46,41 @@ class PipelineDatasetReader(DatasetReader):
         super().__init__(lazy=False)
         self.token_indexers = token_indexers
 
-    def text_to_instance(self, prompt: List[List[str]], evidence: List[str], non_evidence: List[str]):
+    def text_to_instance(self, prompt: List[List[str]], evidence: List[List[str]]):
 
         fields = {
-            'comb_evidence': TextField([Token(x) for x in (['[CLS]'] + prompt[0] + prompt[1] + prompt[2] +
-                                                           ['[SEP]'] + evidence)], self.token_indexers),
-            'comb_non_evidence': TextField([Token(x) for x in (['[CLS]'] + prompt[0] + prompt[1] + prompt[2] +
-                                                               ['[SEP]'] + non_evidence)], self.token_indexers)
+            'comb_sentences': ListField([TextField([Token(x) for x in (['[CLS]'] + prompt[0] + prompt[1] + prompt[2] +
+                                                                       ['[SEP]'] + e)], self.token_indexers)
+                                         for e in evidence])
         }
         return Instance(fields)
 
     def _read(self, dataset) -> Iterator[Instance]:
         for item in dataset:
-            yield None
+            yield self.text_to_instance([item['I'], item['C'], item['O']], [s[0] for s in item['sentence_span']])
 
 
 def main():
     parser = argparse.ArgumentParser(description='Evidence sentence classifier')
-    parser.add_argument('--epochs', type=int, default=5,
-                        help='upper epoch limit (default: 5)')
-    parser.add_argument('--patience', type=int, default=1,
-                        help='trainer patience  (default: 1)')
-    parser.add_argument('--batch_size', type=int, default=8,
-                        help='batch size (default: 8)')
-    parser.add_argument('--model_name', type=str, default='ev_classifier_bert',
-                        help='model name (default: ev_classifier_bert)')
-    parser.add_argument('--tunable', action='store_true',
-                        help='tune the underlying embedding model (default: False)')
+    parser.add_argument('--k', type=int, default=3,
+                        help='number of evidence sentences to pick from the classifier (default: 3)')
     args = parser.parse_args()
-
-    classifier_train = pickle.load(open('data/classifier_train.p', 'rb'))
-    classifier_val = pickle.load(open('data/classifier_val.p', 'rb'))
 
     bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
 
-    reader = EvidenceDatasetReader(bert_token_indexer)
-    train_data = reader.read(classifier_train)
-    valid_data = reader.read(classifier_val)
+    pipeline_train = pickle.load(open('data/train_instances.p', 'rb'))
+    pipeline_val = pickle.load(open('data/val_instances.p', 'rb'))
+    pipeline_test = pickle.load(open('data/test_instances.p', 'rb'))
 
-    vocab = Vocabulary.from_instances(train_data + valid_data)
+    pipeline_reader = PipelineDatasetReader(bert_token_indexer)
+    p_train = pipeline_reader.read(pipeline_train)
+    p_val = pipeline_reader.read(pipeline_val)
+    p_test = pipeline_reader.read(pipeline_test)
+
+    p_vocab = Vocabulary.from_instances(p_train + p_val + p_test)
 
     bert_token_embedding = PretrainedBertEmbedder(
-        'scibert/weights.tar.gz', requires_grad=args.tunable
+        'scibert/weights.tar.gz', requires_grad=False
     )
 
     word_embeddings = BasicTextFieldEmbedder(
@@ -102,12 +90,68 @@ def main():
     )
 
     ev_classifier = Classifier(word_embeddings=word_embeddings,
-                               vocab=vocab,
+                               vocab=p_vocab,
                                loss='bce',
                                hinge_margin=0)
+    predictor = Oracle(word_embeddings=word_embeddings,
+                       vocab=p_vocab)
 
-    ev_classifier.load_state_dict(torch.load('model_checkpoints/f_evidence_sentence_classifier/best.th'))
-    print('Classifier model loaded successfully')
+    ev_classifier.load_state_dict(torch.load('model_checkpoints/f_evidence_sentence_classifier/best.th',
+                                             map_location='cpu'))
+    predictor.load_state_dict(torch.load('model_checkpoints/f_oracle_full/best.th',
+                                         map_location='cpu'))
+
+    cuda_device = list(range(torch.cuda.device_count()))
+
+    if torch.cuda.is_available():
+        ev_classifier = ev_classifier.cuda()
+        predictor = predictor.cuda()
+    else:
+        cuda_device = -1
+
+    print('Classifier and Predictor models loaded successfully')
+    ev_classifier.eval()
+    predictor.eval()
+
+    iterator = BasicIterator(batch_size=1)
+    iterator.index_with(p_vocab)
+
+    iterator_obj = iterator(p_test, num_epochs=1, shuffle=False)
+
+    output_probs = []
+    total = iterator.get_num_batches(p_test)
+    count = 0
+    for batch in iterator_obj:
+        batch = nn_util.move_to_device(batch, cuda_device)
+        output_probs.append(ev_classifier.predict_evidence_probs(**batch))
+        count += 1
+        if count == total:
+            break
+
+    top_k_sentences = []
+    for i in range(len(pipeline_test)):
+        sentences = [' '.join(s[0]) for s in pipeline_test[i]['sentence_span']]
+        probs = list(output_probs[i])
+        sorted_sentences = sorted(zip(sentences, probs), key=lambda x: x[1], reverse=True)
+        top_k = [s[0] for s in sorted_sentences[:args.k]]
+        top_k_sentences.append({'I': pipeline_test['I'],
+                                'C': pipeline_test['C'],
+                                'O': pipeline_test['O'],
+                                'y_label': pipeline_test['y_label'],
+                                'evidence': ' '.join(top_k)})
+
+    print('Obtained the top sentences from the evidence classifier')
+
+    predictor_reader = EIDatasetReader(bert_token_indexer)
+    predictor_test = predictor_reader.read(top_k_sentences)
+
+    test_metrics = evaluate(predictor, predictor_test, iterator,
+                            cuda_device=cuda_device,
+                            batch_weight_key="")
+
+    print('Test Data statistics:')
+    for key, value in test_metrics.items():
+        print(str(key) + ': ' + str(value))
 
 
 if __name__ == '__main__':
