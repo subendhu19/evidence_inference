@@ -99,18 +99,16 @@ def main():
     predictor = Oracle(word_embeddings=word_embeddings,
                        vocab=p_vocab)
 
-    ev_classifier.load_state_dict(torch.load('model_checkpoints/f_evidence_sentence_classifier/best.th',
-                                             map_location='cpu'))
-    predictor.load_state_dict(torch.load('model_checkpoints/f_oracle_full/best.th',
-                                         map_location='cpu'))
-
-    cuda_device = list(range(torch.cuda.device_count()))
+    cuda_device = 0
 
     if torch.cuda.is_available():
         ev_classifier = ev_classifier.cuda()
         predictor = predictor.cuda()
     else:
         cuda_device = -1
+
+    ev_classifier.load_state_dict(torch.load('model_checkpoints/f_evidence_sentence_classifier/best.th'))
+    predictor.load_state_dict(torch.load('model_checkpoints/f_oracle_full/best.th'))
 
     print('Classifier and Predictor models loaded successfully')
     ev_classifier.eval()
