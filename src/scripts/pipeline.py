@@ -30,11 +30,17 @@ from allennlp.data.token_indexers import (
 )
 # from allennlp.training.util import evaluate
 from pytorch_pretrained_bert import BertAdam
-from src.scripts.classifier import Classifier, EvidenceDatasetReader
 
 import logging
 import argparse
 import numpy as np
+import sys
+import os
+
+# Path hack
+sys.path.insert(0, os.path.abspath('./'))
+
+from src.scripts.classifier import Classifier, EvidenceDatasetReader
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -68,10 +74,6 @@ def main():
                         help='trainer patience  (default: 1)')
     parser.add_argument('--batch_size', type=int, default=8,
                         help='batch size (default: 8)')
-    parser.add_argument('--loss', type=str, default='hinge',
-                        help='loss function to train the model - choose bce or hinge (default: hinge)')
-    parser.add_argument('--hinge_margin', type=float, default=0.5,
-                        help='the margin for the hinge loss, if used (default: 0.5)')
     parser.add_argument('--model_name', type=str, default='ev_classifier_bert',
                         help='model name (default: ev_classifier_bert)')
     parser.add_argument('--tunable', action='store_true',
