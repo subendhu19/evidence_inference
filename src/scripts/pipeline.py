@@ -106,7 +106,7 @@ def main():
                                loss='bce',
                                hinge_margin=0)
 
-    ev_classifier.load_state_dict(torch.load('model_checkpoints/f_oracle_sentence/best.th'))
+    ev_classifier.load_state_dict(torch.load('model_checkpoints/f_evidence_sentence_classifier/best.th'))
     print('Classifier model loaded successfully')
 
 
