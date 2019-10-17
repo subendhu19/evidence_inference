@@ -58,8 +58,9 @@ class PipelineDatasetReader(DatasetReader):
 
     def _read(self, dataset) -> Iterator[Instance]:
         for item in dataset:
-            yield self.text_to_instance([item['I'], item['C'], item['O']], [s[0] for s in item['sentence_span']],
-                                        str(item['y_label']))
+            yield self.text_to_instance([item['I'], item['C'], item['O']], [[w.lower() for w in s[0]]
+                                                                            for s in item['sentence_span']],
+                                        str(item['y'][0][0]))
 
 
 def main():
