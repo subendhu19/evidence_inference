@@ -46,18 +46,20 @@ class PipelineDatasetReader(DatasetReader):
         super().__init__(lazy=False)
         self.token_indexers = token_indexers
 
-    def text_to_instance(self, prompt: List[List[str]], evidence: List[List[str]]):
+    def text_to_instance(self, prompt: List[List[str]], evidence: List[List[str]], label: str):
 
         fields = {
             'comb_sentences': ListField([TextField([Token(x) for x in (['[CLS]'] + prompt[0] + prompt[1] + prompt[2] +
                                                                        ['[SEP]'] + e)], self.token_indexers)
-                                         for e in evidence])
+                                         for e in evidence]),
+            'labels': LabelField(label)
         }
         return Instance(fields)
 
     def _read(self, dataset) -> Iterator[Instance]:
         for item in dataset:
-            yield self.text_to_instance([item['I'], item['C'], item['O']], [s[0] for s in item['sentence_span']])
+            yield self.text_to_instance([item['I'], item['C'], item['O']], [s[0] for s in item['sentence_span']],
+                                        str(item['y_label']))
 
 
 def main():
