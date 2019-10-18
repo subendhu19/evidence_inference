@@ -128,7 +128,8 @@ def main():
             for batch in generator_tqdm:
                 batch = nn_util.move_to_device(batch, cuda_device)
                 probs = ev_classifier.predict_evidence_probs(**batch)
-                output_probs.append(list(probs))
+                probs = probs.numpy()
+                output_probs.append(probs)
 
             output_probs = [i for item in output_probs for i in item]
             logger.info('Obtained all sentence evidence probabilities - total {}'.format(len(output_probs)))
