@@ -111,7 +111,7 @@ def main():
         ev_classifier.load_state_dict(torch.load('model_checkpoints/f_evidence_sentence_classifier/best.th'))
         predictor.load_state_dict(torch.load('model_checkpoints/f_oracle_full/best.th'))
 
-        print('Classifier and Predictor models loaded successfully')
+        logger.info('Classifier and Predictor models loaded successfully')
         ev_classifier.eval()
         predictor.eval()
 
@@ -128,7 +128,7 @@ def main():
             for prob in probs:
                 output_probs.append(prob)
 
-        print('Obtained all sentence evidence probabilities - total {}'.format(len(output_probs)))
+        logger.info('Obtained all sentence evidence probabilities - total {}'.format(len(output_probs)))
 
         top_k_sentences = []
         prob_counter = 0
@@ -144,7 +144,7 @@ def main():
                                     'y_label': pipeline_test['y_label'],
                                     'evidence': ' '.join(top_k)})
 
-        print('Obtained the top sentences from the evidence classifier')
+        logger.info('Obtained the top sentences from the evidence classifier')
 
         predictor_reader = EIDatasetReader(bert_token_indexer)
         predictor_test = predictor_reader.read(top_k_sentences)
