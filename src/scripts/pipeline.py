@@ -125,10 +125,11 @@ def main():
         for batch in generator_tqdm:
             batch = nn_util.move_to_device(batch, cuda_device)
             probs = ev_classifier.predict_evidence_probs(**batch)
-            for prob in probs:
-                output_probs.append(prob)
+            output_probs.append(list(probs))
 
+        output_probs = [i for item in output_probs for i in item]
         logger.info('Obtained all sentence evidence probabilities - total {}'.format(len(output_probs)))
+        pickle.dump(output_probs, open('sentence_ev_probs.p', 'wb'))
 
         top_k_sentences = []
         prob_counter = 0
@@ -138,10 +139,10 @@ def main():
             prob_counter += len(sentences)
             sorted_sentences = sorted(zip(sentences, probs), key=lambda x: x[1], reverse=True)
             top_k = [s[0] for s in sorted_sentences[:args.k]]
-            top_k_sentences.append({'I': pipeline_test['I'],
-                                    'C': pipeline_test['C'],
-                                    'O': pipeline_test['O'],
-                                    'y_label': pipeline_test['y_label'],
+            top_k_sentences.append({'I': pipeline_test[i]['I'],
+                                    'C': pipeline_test[i]['C'],
+                                    'O': pipeline_test[i]['O'],
+                                    'y_label': pipeline_test[i]['y_label'],
                                     'evidence': ' '.join(top_k)})
 
         logger.info('Obtained the top sentences from the evidence classifier')
