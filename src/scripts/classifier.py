@@ -143,7 +143,7 @@ class Classifier(Model):
 
     def predict_evidence_probs(self, comb_sentences: Dict[str, torch.Tensor], labels: torch.Tensor) -> torch.Tensor:
         sentence_embeddings = self.word_embeddings(comb_sentences)
-        sentence_vec = sentence_embeddings[:, :, 0, :]
+        sentence_vec = sentence_embeddings[:, 0, :]
         sentence_probs = self.sigmoid(self.out(sentence_vec))
 
         return sentence_probs.squeeze()
