@@ -134,7 +134,8 @@ def main():
             logger.info('Obtained all sentence evidence probabilities - total {}'.format(len(output_probs)))
             pickle.dump(output_probs, open('sentence_ev_probs.p', 'wb'))
 
-        output_probs = pickle.load(open(args.probs, 'rb'))
+        else:
+            output_probs = pickle.load(open(args.probs, 'rb'))
 
         top_k_sentences = []
         prob_counter = 0
