@@ -64,12 +64,14 @@ class PipelineDatasetReader(DatasetReader):
 
 
 def main():
-    with torch.no_grad():
-        parser = argparse.ArgumentParser(description='Evidence sentence classifier')
-        parser.add_argument('--k', type=int, default=3,
-                            help='number of evidence sentences to pick from the classifier (default: 3)')
-        args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Evidence sentence classifier')
+    parser.add_argument('--k', type=int, default=3,
+                        help='number of evidence sentences to pick from the classifier (default: 3)')
+    parser.add_argument('--probs', type=str, default=None,
+                        help='Pickled sentence probs file (default: None)')
+    args = parser.parse_args()
 
+    with torch.no_grad():
         bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
 
         # pipeline_train = pickle.load(open('data/train_instances.p', 'rb'))
@@ -118,18 +120,21 @@ def main():
         iterator = BasicIterator(batch_size=256)
         iterator.index_with(p_vocab)
 
-        iterator_obj = iterator(p_test, num_epochs=1, shuffle=False)
-        generator_tqdm = Tqdm.tqdm(iterator_obj, total=iterator.get_num_batches(p_test))
+        if args.probs is None:
+            iterator_obj = iterator(p_test, num_epochs=1, shuffle=False)
+            generator_tqdm = Tqdm.tqdm(iterator_obj, total=iterator.get_num_batches(p_test))
 
-        output_probs = []
-        for batch in generator_tqdm:
-            batch = nn_util.move_to_device(batch, cuda_device)
-            probs = ev_classifier.predict_evidence_probs(**batch)
-            output_probs.append(list(probs))
+            output_probs = []
+            for batch in generator_tqdm:
+                batch = nn_util.move_to_device(batch, cuda_device)
+                probs = ev_classifier.predict_evidence_probs(**batch)
+                output_probs.append(list(probs))
 
-        output_probs = [i for item in output_probs for i in item]
-        logger.info('Obtained all sentence evidence probabilities - total {}'.format(len(output_probs)))
-        pickle.dump(output_probs, open('sentence_ev_probs.p', 'wb'))
+            output_probs = [i for item in output_probs for i in item]
+            logger.info('Obtained all sentence evidence probabilities - total {}'.format(len(output_probs)))
+            pickle.dump(output_probs, open('sentence_ev_probs.p', 'wb'))
+
+        output_probs = pickle.load(open(args.probs, 'rb'))
 
         top_k_sentences = []
         prob_counter = 0
@@ -142,7 +147,7 @@ def main():
             top_k_sentences.append({'I': pipeline_test[i]['I'],
                                     'C': pipeline_test[i]['C'],
                                     'O': pipeline_test[i]['O'],
-                                    'y_label': pipeline_test[i]['y_label'],
+                                    'y_label': pipeline_test[i]['y'][0][0],
                                     'evidence': ' '.join(top_k)})
 
         logger.info('Obtained the top sentences from the evidence classifier')
