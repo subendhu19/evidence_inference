@@ -115,7 +115,7 @@ def main():
         ev_classifier.eval()
         predictor.eval()
 
-        iterator = BasicIterator(batch_size=32)
+        iterator = BasicIterator(batch_size=256)
         iterator.index_with(p_vocab)
 
         iterator_obj = iterator(p_test, num_epochs=1, shuffle=False)
