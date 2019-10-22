@@ -28,12 +28,6 @@ from pytorch_pretrained_bert import BertAdam
 from allennlp.data.token_indexers import (
     PretrainedBertIndexer
 )
-import sys
-import os
-# Path hack
-sys.path.insert(0, os.path.abspath('./'))
-
-from src.scripts.pipeline import PipelineDatasetReader
 
 import logging
 import argparse
@@ -42,6 +36,27 @@ import pickle
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
+
+
+class PipelineDatasetReader(DatasetReader):
+    def __init__(self, token_indexers: Dict[str, TokenIndexer] = None) -> None:
+        super().__init__(lazy=False)
+        self.token_indexers = token_indexers
+
+    def text_to_instance(self, prompt: List[List[str]], evidence: List[str], label: str):
+
+        fields = {
+            'comb_sentences': TextField([Token(x) for x in (['[CLS]'] + prompt[0] + prompt[1] + prompt[2] +
+                                                            ['[SEP]'] + evidence)], self.token_indexers),
+            'labels': LabelField(label)
+        }
+        return Instance(fields)
+
+    def _read(self, dataset) -> Iterator[Instance]:
+        for item in dataset:
+            for s in item['sentence_span']:
+                yield self.text_to_instance([item['I'], item['C'], item['O']], [w.lower() for w in s[0]],
+                                            str(item['y'][0][0]))
 
 
 class EIDatasetReader(DatasetReader):
