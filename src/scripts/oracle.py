@@ -28,7 +28,12 @@ from pytorch_pretrained_bert import BertAdam
 from allennlp.data.token_indexers import (
     PretrainedBertIndexer
 )
-# from allennlp.training.util import evaluate
+import sys
+import os
+# Path hack
+sys.path.insert(0, os.path.abspath('./'))
+
+from src.scripts.pipeline import PipelineDatasetReader
 
 import logging
 import argparse
@@ -133,11 +138,20 @@ def main():
 
     bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
 
+    pipeline_train = pickle.load(open('data/train_instances.p', 'rb'))
+    pipeline_val = pickle.load(open('data/val_instances.p', 'rb'))
+    pipeline_test = pickle.load(open('data/test_instances.p', 'rb'))
+
+    pipeline_reader = PipelineDatasetReader(bert_token_indexer)
+    p_train = pipeline_reader.read(pipeline_train)
+    p_val = pipeline_reader.read(pipeline_val)
+    p_test = pipeline_reader.read(pipeline_test)
+
+    p_vocab = Vocabulary.from_instances(p_train + p_val + p_test)
+
     reader = EIDatasetReader(bert_token_indexer)
     train_data = reader.read(train)
     valid_data = reader.read(valid)
-
-    vocab = Vocabulary.from_instances(train_data + valid_data)
 
     bert_token_embedding = PretrainedBertEmbedder(
         'scibert/weights.tar.gz', requires_grad=args.tunable
@@ -149,7 +163,7 @@ def main():
         allow_unmatched_keys=True
     )
 
-    model = Oracle(word_embeddings, vocab)
+    model = Oracle(word_embeddings, p_vocab)
 
     cuda_device = list(range(torch.cuda.device_count()))
 
@@ -165,7 +179,7 @@ def main():
     iterator = BucketIterator(batch_size=args.batch_size,
                               sorting_keys=[('comb_prompt_ev', 'num_tokens')],
                               padding_noise=0.1)
-    iterator.index_with(vocab)
+    iterator.index_with(p_vocab)
 
     serialization_dir = 'model_checkpoints/' + args.model_name
 

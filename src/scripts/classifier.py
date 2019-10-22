@@ -28,12 +28,19 @@ from allennlp.training.trainer import Trainer
 from allennlp.data.token_indexers import (
     PretrainedBertIndexer
 )
-# from allennlp.training.util import evaluate
+
 from pytorch_pretrained_bert import BertAdam
 
 import logging
 import argparse
 import numpy as np
+import sys
+import os
+
+# Path hack
+sys.path.insert(0, os.path.abspath('./'))
+
+from src.scripts.pipeline import PipelineDatasetReader
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -171,16 +178,25 @@ def main():
         print('Loss must be bce or hinge')
         return
 
+    bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
+
+    pipeline_train = pickle.load(open('data/train_instances.p', 'rb'))
+    pipeline_val = pickle.load(open('data/val_instances.p', 'rb'))
+    pipeline_test = pickle.load(open('data/test_instances.p', 'rb'))
+
+    pipeline_reader = PipelineDatasetReader(bert_token_indexer)
+    p_train = pipeline_reader.read(pipeline_train)
+    p_val = pipeline_reader.read(pipeline_val)
+    p_test = pipeline_reader.read(pipeline_test)
+
+    p_vocab = Vocabulary.from_instances(p_train + p_val + p_test)
+
     classifier_train = pickle.load(open('data/classifier_train.p', 'rb'))
     classifier_val = pickle.load(open('data/classifier_val.p', 'rb'))
-
-    bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
 
     reader = EvidenceDatasetReader(bert_token_indexer)
     train_data = reader.read(classifier_train)
     valid_data = reader.read(classifier_val)
-
-    vocab = Vocabulary.from_instances(train_data + valid_data)
 
     bert_token_embedding = PretrainedBertEmbedder(
         'scibert/weights.tar.gz', requires_grad=args.tunable
@@ -193,7 +209,7 @@ def main():
     )
 
     model = Classifier(word_embeddings=word_embeddings,
-                       vocab=vocab,
+                       vocab=p_vocab,
                        loss=args.loss,
                        hinge_margin=args.hinge_margin)
 
@@ -212,7 +228,7 @@ def main():
                               sorting_keys=[('comb_evidence', 'num_tokens')],
                               padding_noise=0.1,
                               biggest_batch_first=True)
-    iterator.index_with(vocab)
+    iterator.index_with(p_vocab)
 
     serialization_dir = 'model_checkpoints/' + args.model_name
 

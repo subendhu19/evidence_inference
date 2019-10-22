@@ -74,16 +74,16 @@ def main():
     with torch.no_grad():
         bert_token_indexer = {'bert': PretrainedBertIndexer('scibert/vocab.txt', max_pieces=512)}
 
-        # pipeline_train = pickle.load(open('data/train_instances.p', 'rb'))
+        pipeline_train = pickle.load(open('data/train_instances.p', 'rb'))
         pipeline_val = pickle.load(open('data/val_instances.p', 'rb'))
         pipeline_test = pickle.load(open('data/test_instances.p', 'rb'))
 
         pipeline_reader = PipelineDatasetReader(bert_token_indexer)
-        # p_train = pipeline_reader.read(pipeline_train)
+        p_train = pipeline_reader.read(pipeline_train)
         p_val = pipeline_reader.read(pipeline_val)
         p_test = pipeline_reader.read(pipeline_test)
 
-        p_vocab = Vocabulary.from_instances(p_val + p_test)
+        p_vocab = Vocabulary.from_instances(p_train + p_val + p_test)
 
         bert_token_embedding = PretrainedBertEmbedder(
             'scibert/weights.tar.gz', requires_grad=False
@@ -128,7 +128,7 @@ def main():
             for batch in generator_tqdm:
                 batch = nn_util.move_to_device(batch, cuda_device)
                 probs = ev_classifier.predict_evidence_probs(**batch)
-                probs = probs.numpy()
+                probs = probs.cpu().numpy()
                 output_probs.append(probs)
 
             output_probs = [i for item in output_probs for i in item]
