@@ -24,6 +24,7 @@ from allennlp.modules.token_embedders import (
 from allennlp.data.iterators import BucketIterator
 from allennlp.training.trainer import Trainer
 from pytorch_pretrained_bert import BertAdam
+from allennlp.training.util import evaluate
 
 from allennlp.data.token_indexers import (
     PretrainedBertIndexer
@@ -144,9 +145,11 @@ def main():
     if args.ev_type == 'sentence':
         train = pickle.load(open('data/oracle_train.p', 'rb'))
         valid = pickle.load(open('data/oracle_val.p', 'rb'))
+        test = pickle.load(open('data/oracle_test.p', 'rb'))
     elif args.ev_type == 'full':
         train = pickle.load(open('data/oracle_full_train.p', 'rb'))
         valid = pickle.load(open('data/oracle_full_val.p', 'rb'))
+        test = pickle.load(open('data/oracle_full_test.p', 'rb'))
     else:
         print('ev_type should be either sentence or full')
         return
@@ -167,6 +170,7 @@ def main():
     reader = EIDatasetReader(bert_token_indexer)
     train_data = reader.read(train)
     valid_data = reader.read(valid)
+    test_data = reader.read(test)
 
     bert_token_embedding = PretrainedBertEmbedder(
         'scibert/weights.tar.gz', requires_grad=args.tunable
@@ -213,13 +217,13 @@ def main():
     for key in result:
         print(str(key) + ': ' + str(result[key]))
 
-    # test_metrics = evaluate(trainer.model, test_data, iterator,
-    #                         cuda_device=cuda_device,
-    #                         batch_weight_key="")
-    #
-    # print('Test Data statistics:')
-    # for key, value in test_metrics.items():
-    #     print(str(key) + ': ' + str(value))
+    test_metrics = evaluate(trainer.model, test_data, iterator,
+                            cuda_device=cuda_device,
+                            batch_weight_key="")
+
+    print('Test Data statistics:')
+    for key, value in test_metrics.items():
+        print(str(key) + ': ' + str(value))
 
 
 if __name__ == '__main__':
