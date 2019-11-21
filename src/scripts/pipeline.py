@@ -58,15 +58,16 @@ class PipelineDatasetReader(DatasetReader):
 
     def _read(self, dataset) -> Iterator[Instance]:
         for item in dataset:
-            for s in item['sentence_span']:
-                yield self.text_to_instance([item['I'], item['C'], item['O']], [w.lower() for w in s[0]],
+            for i in range(len(item['sentence_span']) - 2):
+                s = item['sentence_span'][i][0] + item['sentence_span'][i+1][0] + item['sentence_span'][i+2][0]
+                yield self.text_to_instance([item['I'], item['C'], item['O']], [w.lower() for w in s],
                                             str(item['y'][0][0]))
 
 
 def main():
     parser = argparse.ArgumentParser(description='Evidence sentence classifier')
-    parser.add_argument('--k', type=int, default=3,
-                        help='number of evidence sentences to pick from the classifier (default: 3)')
+    parser.add_argument('--k', type=int, default=1,
+                        help='number of evidence paragraphs to pick from the classifier (default: 1)')
     parser.add_argument('--probs', type=str, default=None,
                         help='Pickled sentence probs file (default: None)')
     args = parser.parse_args()
@@ -110,7 +111,7 @@ def main():
         else:
             cuda_device = -1
 
-        ev_classifier.load_state_dict(torch.load('model_checkpoints/f_evidence_sentence_classifier/best.th'))
+        ev_classifier.load_state_dict(torch.load('model_checkpoints/f_evidence_sentence_classifier_para/best.th'))
         predictor.load_state_dict(torch.load('model_checkpoints/f_oracle_full/best.th'))
 
         logger.info('Classifier and Predictor models loaded successfully')
