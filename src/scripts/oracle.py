@@ -193,7 +193,7 @@ def main():
 
     t_total = len(train_data) // args.epochs
 
-    optimizer = BertAdam(model.parameters(), lr=2e-5, warmup=0.1, t_total=t_total)
+    optimizer = BertAdam(model.parameters(), lr=1e-5, warmup=0.05, t_total=t_total)
 
     iterator = BucketIterator(batch_size=args.batch_size,
                               sorting_keys=[('comb_prompt_ev', 'num_tokens')],
@@ -217,6 +217,8 @@ def main():
     for key in result:
         print(str(key) + ': ' + str(result[key]))
 
+    if cuda_device != -1:
+        cuda_device = 0
     test_metrics = evaluate(trainer.model, test_data, iterator,
                             cuda_device=cuda_device,
                             batch_weight_key="")
