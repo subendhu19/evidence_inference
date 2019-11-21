@@ -142,7 +142,9 @@ def main():
         top_k_sentences = []
         prob_counter = 0
         for i in range(len(pipeline_test)):
-            sentences = [' '.join(s[0]) for s in pipeline_test[i]['sentence_span']]
+            sentences = [' '.join(pipeline_test[i]['sentence_span'][k][0] + pipeline_test[i]['sentence_span'][k + 1][0]
+                                  + pipeline_test[i]['sentence_span'][k + 2][0])
+                         for k in range(len(pipeline_test[i]['sentence_span']) - 2)]
             probs = list(output_probs[prob_counter: prob_counter + len(sentences)])
             prob_counter += len(sentences)
             sorted_sentences = sorted(zip(sentences, probs), key=lambda x: x[1], reverse=True)
