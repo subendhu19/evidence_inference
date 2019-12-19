@@ -132,7 +132,7 @@ def main():
             probs = list(doc_scores)
             prob_counter += len(sentences)
             sorted_sentences = sorted(zip(sentences, probs), key=lambda x: x[1], reverse=True)
-            top_k = [s[0] for s in sorted_sentences[:args.k]]
+            top_k = [' '.join(s[0]) for s in sorted_sentences[:args.k]]
             top_k_sentences.append({'I': pipeline_test[i]['I'],
                                     'C': pipeline_test[i]['C'],
                                     'O': pipeline_test[i]['O'],
